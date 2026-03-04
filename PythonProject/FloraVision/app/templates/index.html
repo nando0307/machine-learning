@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FloraVision — Flower Classifier</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Exo:wght@300;400;600;700;800&family=Roboto+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            exo: ['Exo', 'sans-serif'],
+            mono: ['Roboto Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Exo', sans-serif;
+      background: #050d08;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: #dcfce7;
+    }
+
+    /* ── Animated background ── */
+    .bg-botanical {
+      background:
+        radial-gradient(ellipse at 15% 40%, rgba(22,163,74,0.09) 0%, transparent 55%),
+        radial-gradient(ellipse at 85% 15%, rgba(20,184,166,0.07) 0%, transparent 55%),
+        radial-gradient(ellipse at 55% 85%, rgba(74,222,128,0.06) 0%, transparent 50%),
+        #050d08;
+    }
+
+    /* ── Particle blobs ── */
+    .particle {
+      position: fixed;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(74,222,128,0.13), transparent 70%);
+      animation: floatBlob 22s ease-in-out infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+    @keyframes floatBlob {
+      0%,100% { transform: translate(0,0) scale(1); opacity: .25; }
+      33%      { transform: translate(18px,-28px) scale(1.08); opacity: .4; }
+      66%      { transform: translate(-14px,18px) scale(.92); opacity: .18; }
+    }
+
+    /* ── Navbar ── */
+    .navbar {
+      background: rgba(5,13,8,0.82);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-bottom: 1px solid rgba(74,222,128,0.08);
+    }
+
+    /* ── Glass card ── */
+    .glass-card {
+      background: rgba(10,26,15,0.78);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      border: 1px solid rgba(74,222,128,0.13);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(74,222,128,0.07);
+    }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed rgba(74,222,128,0.28);
+      background: rgba(15,38,20,0.4);
+      border-radius: 16px;
+      cursor: pointer;
+      transition: border-color .25s, background .25s, box-shadow .25s;
+      user-select: none;
+    }
+    .upload-zone:hover,
+    .upload-zone.drag-active {
+      border-color: rgba(74,222,128,0.75);
+      background: rgba(22,101,52,0.18);
+      box-shadow: 0 0 32px rgba(74,222,128,0.1), inset 0 0 28px rgba(74,222,128,0.04);
+    }
+
+    /* ── Preview image ── */
+    .preview-img {
+      max-height: 210px;
+      width: auto;
+      object-fit: contain;
+      border-radius: 12px;
+      border: 1px solid rgba(74,222,128,0.2);
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* ── Predict button ── */
+    .predict-btn {
+      background: linear-gradient(135deg, #15803d, #22c55e);
+      border: none;
+      color: #fff;
+      font-family: 'Exo', sans-serif;
+      font-weight: 700;
+      font-size: 1rem;
+      border-radius: 14px;
+      padding: 14px;
+      width: 100%;
+      cursor: pointer;
+      transition: background .2s, box-shadow .2s, transform .15s;
+      box-shadow: 0 4px 22px rgba(34,197,94,0.28);
+    }
+    .predict-btn:hover:not(:disabled) {
+      background: linear-gradient(135deg, #22c55e, #4ade80);
+      box-shadow: 0 6px 32px rgba(74,222,128,0.45);
+      transform: translateY(-1px);
+    }
+    .predict-btn:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ── Spinner ── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin .75s linear infinite; }
+
+    /* ── Glow heading ── */
+    .text-glow {
+      text-shadow: 0 0 22px rgba(74,222,128,0.5), 0 0 50px rgba(74,222,128,0.18);
+    }
+
+    /* ── Confidence bar ── */
+    .conf-track {
+      height: 7px;
+      background: rgba(74,222,128,0.12);
+      border-radius: 9999px;
+      overflow: hidden;
+    }
+    .conf-fill {
+      height: 100%;
+      border-radius: 9999px;
+      width: 0%;
+      transition: width .85s cubic-bezier(.4,0,.2,1);
+    }
+    .conf-fill-top {
+      background: linear-gradient(90deg, #166534, #22c55e, #14b8a6);
+      box-shadow: 0 0 10px rgba(74,222,128,0.55);
+    }
+    .conf-fill-alt {
+      background: linear-gradient(90deg, #14532d, #16a34a, #0d9488);
+    }
+
+    /* ── Top-match card ── */
+    .top-match-card {
+      background: linear-gradient(135deg, rgba(22,163,74,0.13), rgba(20,184,166,0.13));
+      border: 1px solid rgba(74,222,128,0.25);
+      border-radius: 14px;
+      padding: 18px 20px;
+    }
+
+    /* ── Tech badge ── */
+    .tech-badge {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.68rem;
+      padding: 3px 11px;
+      border-radius: 9999px;
+      background: rgba(74,222,128,0.07);
+      border: 1px solid rgba(74,222,128,0.18);
+      color: #86efac;
+      white-space: nowrap;
+    }
+
+    /* ── Section label ── */
+    .section-label {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: #86efac;
+    }
+
+    /* ── Fade-in ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-up { animation: fadeUp .45s ease both; }
+
+    /* ── Pulse glow on result reveal ── */
+    @keyframes pulseGlow {
+      0%,100% { box-shadow: 0 8px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(74,222,128,0.07); }
+      50%      { box-shadow: 0 8px 40px rgba(0,0,0,0.45), 0 0 40px rgba(74,222,128,0.18), inset 0 1px 0 rgba(74,222,128,0.07); }
+    }
+    .pulse-reveal { animation: pulseGlow 1.6s ease-in-out 2; }
+
+    /* ── Other-prediction row ── */
+    .pred-row { margin-bottom: 14px; }
+    .pred-row:last-child { margin-bottom: 0; }
+  </style>
+</head>
+
+<body class="bg-botanical">
+
+  <!-- Particle blobs -->
+  <div class="particle" style="width:340px;height:340px;top:8%;left:3%;animation-delay:0s;"></div>
+  <div class="particle" style="width:220px;height:220px;top:62%;left:82%;animation-delay:-8s;"></div>
+  <div class="particle" style="width:170px;height:170px;top:35%;left:52%;animation-delay:-15s;"></div>
+
+  <!-- ── Navbar ── -->
+  <nav class="navbar fixed top-0 left-0 right-0 z-50 px-5 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+      <!-- Logo -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background:linear-gradient(135deg,#16a34a,#0d9488);">
+          <!-- Leaf icon -->
+          <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/>
+            <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+          </svg>
+        </div>
+        <span class="text-lg font-bold text-green-300" style="letter-spacing:-.3px;">FloraVision</span>
+      </div>
+      <!-- Right -->
+      <div class="flex items-center gap-3">
+        <span class="tech-badge hidden sm:inline">v1.0 &nbsp;·&nbsp; Student Project</span>
+        <a href="https://github.com" target="_blank" rel="noopener"
+           class="w-8 h-8 rounded-lg flex items-center justify-center border border-green-900 hover:border-green-600 transition-colors cursor-pointer" title="GitHub">
+          <svg class="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.49.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.749 0 .267.18.579.688.481C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Main ── -->
+  <main class="relative z-10 pt-24 pb-16 px-4">
+    <div class="max-w-5xl mx-auto">
+
+      <!-- Hero -->
+      <div class="text-center pt-8 pb-10">
+        <div class="inline-flex items-center gap-2 tech-badge mb-6">
+          <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#4ade80;"></span>
+          Oxford 102 Flowers &nbsp;·&nbsp; ConvNeXt-Tiny &nbsp;·&nbsp; Optuna HPO
+        </div>
+        <h1 class="text-glow font-extrabold mb-4"
+            style="font-family:'Exo',sans-serif;font-size:clamp(2.6rem,7vw,4.2rem);color:#4ade80;letter-spacing:-1.5px;line-height:1.08;">
+          FloraVision
+        </h1>
+        <p style="font-family:'Roboto Mono',monospace;font-size:.88rem;color:rgba(134,239,172,.65);line-height:1.7;">
+          Upload a flower photo — the model identifies the species.<br>
+          <span style="color:rgba(74,222,128,.4);font-size:.78rem;">102 species · Deep Learning · PyTorch</span>
+        </p>
+      </div>
+
+      <!-- ── Two-column layout ── -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+
+        <!-- ─ Upload Card ─ -->
+        <div class="glass-card rounded-2xl p-6">
+          <div class="flex items-center gap-2 mb-5">
+            <span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;flex-shrink:0;"></span>
+            <span class="section-label">Upload Image</span>
+          </div>
+
+          <!-- Drop zone -->
+          <div id="upload-zone" class="upload-zone p-8 text-center"
+               onclick="document.getElementById('file-input').click()">
+
+            <!-- Placeholder -->
+            <div id="up-placeholder">
+              <div style="width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(22,101,52,.25);border:1px solid rgba(74,222,128,.2);display:flex;align-items:center;justify-content:center;">
+                <svg style="width:30px;height:30px;color:#22c55e;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+              </div>
+              <p style="color:#86efac;font-weight:600;margin-bottom:6px;">Drop your flower image here</p>
+              <p style="font-family:'Roboto Mono',monospace;font-size:.78rem;color:rgba(74,222,128,.45);">or click to browse &nbsp;·&nbsp; JPG, PNG, WEBP</p>
+            </div>
+
+            <!-- Preview -->
+            <div id="up-preview" style="display:none;">
+              <img id="preview-img" class="preview-img" alt="Flower preview">
+              <p id="preview-name" style="font-family:'Roboto Mono',monospace;font-size:.75rem;color:#4ade80;margin-top:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;"></p>
+              <p style="font-family:'Roboto Mono',monospace;font-size:.7rem;color:rgba(74,222,128,.35);margin-top:4px;">Click to change image</p>
+            </div>
+          </div>
+
+          <input type="file" id="file-input" accept="image/*" style="display:none;">
+
+          <!-- Predict button -->
+          <button id="predict-btn" class="predict-btn mt-5" disabled onclick="runPrediction()">
+            <span id="btn-default" style="display:flex;align-items:center;justify-content:center;gap:8px;">
+              <svg style="width:18px;height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+              Identify Flower
+            </span>
+            <span id="btn-loading" style="display:none;align-items:center;justify-content:center;gap:8px;">
+              <svg class="spinner" style="width:18px;height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+              </svg>
+              Analyzing...
+            </span>
+          </button>
+        </div>
+
+        <!-- ─ Results Card ─ -->
+        <div id="results-card" class="glass-card rounded-2xl p-6" style="min-height:320px;">
+          <div class="flex items-center gap-2 mb-5">
+            <span style="width:8px;height:8px;border-radius:50%;background:#14b8a6;display:inline-block;flex-shrink:0;"></span>
+            <span class="section-label">Predictions</span>
+          </div>
+
+          <!-- Empty state -->
+          <div id="results-empty" style="text-align:center;padding:52px 0;">
+            <div style="width:64px;height:64px;margin:0 auto 16px;border-radius:16px;background:rgba(20,184,166,.1);border:1px solid rgba(20,184,166,.18);display:flex;align-items:center;justify-content:center;">
+              <svg style="width:30px;height:30px;color:rgba(20,184,166,.4);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/>
+                <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+              </svg>
+            </div>
+            <p style="font-family:'Roboto Mono',monospace;font-size:.8rem;color:rgba(74,222,128,.35);">
+              Upload an image to see predictions
+            </p>
+          </div>
+
+          <!-- Results content -->
+          <div id="results-content" style="display:none;">
+
+            <!-- Top match -->
+            <div id="top-match" class="top-match-card fade-up" style="margin-bottom:20px;">
+              <p style="font-family:'Roboto Mono',monospace;font-size:.68rem;color:rgba(74,222,128,.5);margin-bottom:6px;">
+                TOP MATCH
+              </p>
+              <p id="top-name" style="font-family:'Exo',sans-serif;font-size:1.55rem;font-weight:700;color:#86efac;text-transform:capitalize;line-height:1.2;margin-bottom:12px;"></p>
+              <div class="conf-track">
+                <div id="top-bar" class="conf-fill conf-fill-top"></div>
+              </div>
+              <p id="top-conf" style="font-family:'Roboto Mono',monospace;font-size:.8rem;color:#4ade80;font-weight:500;margin-top:6px;text-align:right;"></p>
+            </div>
+
+            <!-- Other predictions -->
+            <div id="other-preds"></div>
+
+          </div>
+        </div>
+
+      </div><!-- end grid -->
+
+      <!-- ── Footer badges ── -->
+      <div style="margin-top:48px;text-align:center;">
+        <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-bottom:14px;">
+          <span class="tech-badge">PyTorch</span>
+          <span class="tech-badge">ConvNeXt-Tiny</span>
+          <span class="tech-badge">Oxford 102 Flowers</span>
+          <span class="tech-badge">Optuna HPO</span>
+          <span class="tech-badge">Flask</span>
+        </div>
+        <p style="font-family:'Roboto Mono',monospace;font-size:.7rem;color:rgba(74,222,128,.28);">
+          Built as a student deep learning project &nbsp;·&nbsp; 2025
+        </p>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    const fileInput     = document.getElementById('file-input');
+    const uploadZone    = document.getElementById('upload-zone');
+    const upPlaceholder = document.getElementById('up-placeholder');
+    const upPreview     = document.getElementById('up-preview');
+    const previewImg    = document.getElementById('preview-img');
+    const previewName   = document.getElementById('preview-name');
+    const predictBtn    = document.getElementById('predict-btn');
+
+    let selectedFile = null;
+
+    // ── File input change ──
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) handleFile(e.target.files[0]);
+    });
+
+    // ── Drag & drop ──
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('drag-active');
+    });
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.classList.remove('drag-active');
+    });
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('drag-active');
+      const f = e.dataTransfer.files[0];
+      if (f && f.type.startsWith('image/')) handleFile(f);
+    });
+
+    function handleFile(file) {
+      selectedFile = file;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        previewImg.src = e.target.result;
+        previewName.textContent = file.name;
+        upPlaceholder.style.display = 'none';
+        upPreview.style.display    = 'block';
+      };
+      reader.readAsDataURL(file);
+      predictBtn.disabled = false;
+      resetResults();
+    }
+
+    function resetResults() {
+      document.getElementById('results-empty').style.display   = 'block';
+      document.getElementById('results-content').style.display = 'none';
+    }
+
+    // ── Run prediction ──
+    async function runPrediction() {
+      if (!selectedFile) return;
+
+      // Loading state
+      predictBtn.disabled = true;
+      document.getElementById('btn-default').style.display  = 'none';
+      document.getElementById('btn-loading').style.display  = 'flex';
+
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+
+      try {
+        const res  = await fetch('/predict', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.predictions) {
+          showResults(data.predictions);
+        } else {
+          alert('Error: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Request failed: ' + err.message);
+      } finally {
+        predictBtn.disabled = false;
+        document.getElementById('btn-default').style.display = 'flex';
+        document.getElementById('btn-loading').style.display = 'none';
+      }
+    }
+
+    function fmt(name) {
+      return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function showResults(predictions) {
+      document.getElementById('results-empty').style.display   = 'none';
+      const content = document.getElementById('results-content');
+      content.style.display = 'block';
+
+      // Top prediction
+      const top = predictions[0];
+      document.getElementById('top-name').textContent = fmt(top.name);
+      document.getElementById('top-conf').textContent = top.confidence.toFixed(1) + '% confidence';
+      setTimeout(() => {
+        document.getElementById('top-bar').style.width = Math.min(top.confidence, 100) + '%';
+      }, 80);
+
+      // Others
+      const container = document.getElementById('other-preds');
+      container.innerHTML = '';
+      predictions.slice(1).forEach((pred, idx) => {
+        const opacity = 0.85 - idx * 0.12;
+        const div = document.createElement('div');
+        div.className = 'pred-row fade-up';
+        div.style.animationDelay = (idx * 0.08 + 0.1) + 's';
+        div.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;">
+            <span style="font-family:'Exo',sans-serif;font-size:.88rem;font-weight:600;color:rgba(134,239,172,.85);text-transform:capitalize;">${fmt(pred.name)}</span>
+            <span style="font-family:'Roboto Mono',monospace;font-size:.72rem;color:rgba(74,222,128,.55);">${pred.confidence.toFixed(1)}%</span>
+          </div>
+          <div class="conf-track">
+            <div class="conf-fill conf-fill-alt" id="bar${idx}" style="opacity:${opacity};"></div>
+          </div>
+        `;
+        container.appendChild(div);
+        setTimeout(() => {
+          const bar = document.getElementById('bar' + idx);
+          if (bar) bar.style.width = Math.min(pred.confidence, 100) + '%';
+        }, 200 + idx * 90);
+      });
+
+      // Pulse glow
+      const card = document.getElementById('results-card');
+      card.classList.remove('pulse-reveal');
+      void card.offsetWidth; // reflow to restart
+      card.classList.add('pulse-reveal');
+    }
+  </script>
+</body>
+</html>
