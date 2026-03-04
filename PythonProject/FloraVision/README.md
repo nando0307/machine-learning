@@ -41,8 +41,6 @@ The hyperparameter importance analysis revealed that **learning rate** (0.51) an
 
 ![Hyperparameter Importances](images/param_importances.png)
 
-![Parallel Coordinate Plot](images/parallel_coordinate.png)
-
 ### Best Configuration
 
 | Parameter | Value |
@@ -72,7 +70,7 @@ The best model was trained for **30 epochs** with early stopping and cosine anne
 
 The confusion matrix shows a near-perfect diagonal with very few misclassifications, concentrated among visually similar flower species.
 
-![Correct Predictions](images/correct_predictions.png)
+![Predictions](images/predictions.png)
 
 ## Project Structure
 
